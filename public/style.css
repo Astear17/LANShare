@@ -1,0 +1,337 @@
+:root {
+    --bg-main: #f3f3f3;
+    --bg-sidebar: #ebebeb;
+    --accent: #0078d4;
+    --text-primary: #323130;
+    --text-secondary: #605e5c;
+    --border: #e1e1e1;
+    --hover: #e1e1e1;
+    --white: #ffffff;
+    --glass: rgba(255, 255, 255, 0.7);
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+#app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* Sidebar */
+.sidebar {
+    width: 260px;
+    background-color: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 0;
+    backdrop-filter: blur(10px);
+}
+
+.logo {
+    padding: 0 24px 30px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+nav {
+    flex: 1;
+}
+
+.nav-item {
+    padding: 10px 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.nav-item:hover {
+    background-color: var(--hover);
+    color: var(--text-primary);
+}
+
+.nav-item.active {
+    background-color: var(--hover);
+    color: var(--accent);
+    border-left: 3px solid var(--accent);
+}
+
+.storage-info {
+    padding: 20px 24px;
+    border-top: 1px solid var(--border);
+}
+
+.storage-info .label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.storage-info .ip-address {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+}
+
+/* Main Content */
+.content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--white);
+    position: relative;
+}
+
+.top-bar {
+    height: 64px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    border-radius: 6px;
+    width: 400px;
+}
+
+.search-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    margin-left: 10px;
+    width: 100%;
+    font-size: 14px;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--white);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.2s;
+}
+
+.btn:hover {
+    background: var(--bg-main);
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.btn-primary:hover {
+    background: #005a9e;
+}
+
+/* Breadcrumbs */
+.breadcrumb {
+    padding: 12px 24px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.breadcrumb span {
+    cursor: pointer;
+}
+
+.breadcrumb span:hover {
+    text-decoration: underline;
+    color: var(--accent);
+}
+
+.breadcrumb .separator {
+    color: #ccc;
+}
+
+/* File View */
+.file-view {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.view-header {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 100px;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    position: sticky;
+    top: 0;
+    background: var(--white);
+}
+
+.file-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.file-item {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 100px;
+    padding: 8px 24px;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+    border-bottom: 1px solid #f9f9f9;
+}
+
+.file-item:hover {
+    background-color: #f3f9ff;
+}
+
+.file-item.selected {
+    background-color: #e5f3ff;
+}
+
+.file-item .name-col {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-item i {
+    font-size: 18px;
+}
+
+.fa-folder { color: #f8d775; }
+.fa-file-pdf { color: #e74c3c; }
+.fa-file-word { color: #2b579a; }
+.fa-file-excel { color: #217346; }
+.fa-file-image { color: #5ebad2; }
+.fa-file-archive { color: #8e44ad; }
+.fa-file-code { color: #34495e; }
+
+/* Properties Panel */
+.properties-panel {
+    width: 320px;
+    background: var(--white);
+    border-left: 1px solid var(--border);
+    display: none;
+    flex-direction: column;
+}
+
+.properties-panel.active {
+    display: flex;
+}
+
+.panel-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel-body {
+    padding: 24px;
+    overflow-y: auto;
+}
+
+.prop-group {
+    margin-bottom: 20px;
+}
+
+.prop-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.prop-value {
+    font-size: 14px;
+    word-break: break-all;
+}
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    background: var(--white);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    border-radius: 8px;
+    padding: 6px 0;
+    min-width: 180px;
+    display: none;
+    z-index: 1000;
+}
+
+.menu-item {
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.menu-item:hover {
+    background: var(--hover);
+}
+
+.menu-item.danger {
+    color: #e74c3c;
+}
+
+hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.file-item {
+    animation: fadeIn 0.3s ease forwards;
+}

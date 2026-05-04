@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LANShare - File Explorer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-share-nodes"></i>
+                <span>LANShare</span>
+            </div>
+            <nav>
+                <div class="nav-item active" onclick="app.navigateTo('')">
+                    <i class="fas fa-home"></i> Home
+                </div>
+                <div class="nav-item" onclick="app.showRecent()">
+                    <i class="fas fa-clock"></i> Recent
+                </div>
+                <div class="nav-item" onclick="app.showSettings()">
+                    <i class="fas fa-cog"></i> Settings
+                </div>
+            </nav>
+            <div class="storage-info">
+                <div class="label">Connected to LAN</div>
+                <div class="ip-address" id="network-ip">Detecting...</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="content">
+            <header class="top-bar">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Search files..." id="search-input">
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="document.getElementById('file-upload').click()">
+                        <i class="fas fa-upload"></i> Upload
+                    </button>
+                    <input type="file" id="file-upload" multiple style="display: none;" onchange="app.handleUpload(event)">
+                    <button class="btn" onclick="app.createFolder()">
+                        <i class="fas fa-folder-plus"></i> New Folder
+                    </button>
+                </div>
+            </header>
+
+            <!-- Breadcrumbs -->
+            <div class="breadcrumb" id="breadcrumb">
+                <!-- Injected via JS -->
+            </div>
+
+            <!-- File Explorer View -->
+            <div class="file-view">
+                <div class="view-header">
+                    <div class="col-name">Name</div>
+                    <div class="col-date">Date modified</div>
+                    <div class="col-type">Type</div>
+                    <div class="col-size">Size</div>
+                </div>
+                <div id="file-list" class="file-list">
+                    <!-- Files injected here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- File Properties Sidebar (Hidden by default) -->
+        <aside class="properties-panel" id="properties-panel">
+            <div class="panel-header">
+                <h3>Properties</h3>
+                <button class="close-btn" onclick="app.hideProperties()"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="properties-content" class="panel-body">
+                <!-- Properties injected here -->
+            </div>
+        </aside>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu">
+        <div class="menu-item" id="ctx-download"><i class="fas fa-download"></i> Download</div>
+        <div class="menu-item" id="ctx-rename"><i class="fas fa-edit"></i> Rename</div>
+        <div class="menu-item danger" id="ctx-delete"><i class="fas fa-trash"></i> Delete</div>
+        <hr>
+        <div class="menu-item" id="ctx-properties"><i class="fas fa-info-circle"></i> Properties</div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
