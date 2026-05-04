@@ -58,18 +58,39 @@ const elevate = () => {
 };
 
 const stopServer = () => {
+    let killed = false;
+    
+    // Try killing by PID file
     if (fs.existsSync(PID_FILE)) {
         const pid = fs.readFileSync(PID_FILE, 'utf8').trim();
         try {
-            // On Windows, taskkill /f /t /pid is very effective
             execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore' });
+            killed = true;
         } catch (e) {
-            // Process already dead
+            // Process might already be dead
         }
-        if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-        return true;
+        fs.unlinkSync(PID_FILE);
     }
-    return false;
+
+    // Fallback: Kill whatever is on our port
+    try {
+        const portOut = execSync(`netstat -ano | findstr :${config.port}`, { encoding: 'utf8' });
+        const lines = portOut.split('\n');
+        for (const line of lines) {
+            if (line.includes('LISTENING')) {
+                const parts = line.trim().split(/\s+/);
+                const pid = parts[parts.length - 1];
+                if (pid && pid !== '0') {
+                    execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore' });
+                    killed = true;
+                }
+            }
+        }
+    } catch (e) {
+        // No process on port
+    }
+
+    return killed;
 };
 
 // --- Subcommand Handlers ---
@@ -145,14 +166,28 @@ const startServerInternal = (customPath) => {
         const absolutePath = path.join(ROOT_DIR, relativePath);
         if (!isSafePath(relativePath)) return res.status(403).json({ error: 'Access denied' });
         try {
-            const items = fs.readdirSync(absolutePath).map(name => {
-                const itemPath = path.join(absolutePath, name);
-                const stats = fs.statSync(itemPath);
-                return {
-                    name, isDir: stats.isDirectory(), size: stats.size, mtime: stats.mtime,
-                    type: mime.lookup(name) || 'application/octet-stream'
-                };
-            });
+            const names = fs.readdirSync(absolutePath);
+            const items = [];
+            
+            for (const name of names) {
+                // Skip common protected Windows folders
+                if (name === 'System Volume Information' || name === '$RECYCLE.BIN') continue;
+
+                try {
+                    const itemPath = path.join(absolutePath, name);
+                    const stats = fs.statSync(itemPath);
+                    items.push({
+                        name, 
+                        isDir: stats.isDirectory(), 
+                        size: stats.size, 
+                        mtime: stats.mtime,
+                        type: mime.lookup(name) || 'application/octet-stream'
+                    });
+                } catch (statErr) {
+                    // Skip files/folders we can't access
+                    continue;
+                }
+            }
             res.json({ path: relativePath, items: items.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name)) });
         } catch (err) { res.status(500).json({ error: err.message }); }
     });
@@ -323,8 +358,9 @@ if (argv.setup) {
     handlePort(argv.port || argv.p);
 } else if (argv['internal-server']) {
     // This is the actual background process
+    const targetDir = argv.root || argv._[0] || config.rootDir;
     fs.writeFileSync(PID_FILE, process.pid.toString());
-    startServerInternal(argv._[0]); // targetDir is first arg in background mode
+    startServerInternal(targetDir);
 } else if (command === 'start') {
     if (isAlreadyRunning()) {
         console.log(chalk.yellow('Server is already running. Stopping it first...'));
@@ -343,7 +379,7 @@ if (argv.setup) {
     console.log(chalk.green(`Network Access: ${urls.network}\n`));
     console.log(chalk.gray(`Hosting Folder: "${targetDir}"`));
 
-    const serverProcess = spawn('node', [__filename, '--internal-server', '--silent', targetDir], {
+    const serverProcess = spawn('node', [__filename, '--internal-server', '--root', targetDir, '--silent'], {
         detached: true,
         stdio: 'ignore'
     });
@@ -375,8 +411,9 @@ if (argv.setup) {
 } else if (command === 'restart') {
     console.log(chalk.cyan('Restarting LANShare...'));
     stopServer();
-    // Use spawn to start it again so it detaches
-    spawn('node', [__filename, 'start'], { stdio: 'inherit', detached: false });
+    // Start it again
+    const targetDir = config.rootDir;
+    spawn('node', [__filename, 'start', targetDir], { stdio: 'inherit', detached: false });
     process.exit(0);
 
 } else if (command === 'help' || argv.help || argv.h) {
