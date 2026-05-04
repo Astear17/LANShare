@@ -301,6 +301,18 @@ const startServerInternal = (customPath) => {
     });
 };
 
+// --- Helpers ---
+
+const getAccessURLs = (port) => {
+    const localIP = ip.address();
+    return {
+        local: `http://localhost:${port}`,
+        network: `http://${localIP}:${port}`
+    };
+};
+
+const isAlreadyRunning = () => fs.existsSync(PID_FILE);
+
 // --- Main Execution Logic ---
 
 const command = argv._[0];
@@ -309,57 +321,68 @@ if (argv.setup) {
     handleSetup();
 } else if (argv.port || argv.p) {
     handlePort(argv.port || argv.p);
-} else if (command === 'start' || argv['internal-server']) {
-    const isInternal = argv['internal-server'];
-    const targetDir = argv._[1] ? path.resolve(argv._[1]) : (config.rootDir || process.cwd());
-
-    if (isInternal) {
-        // This is the background process
-        fs.writeFileSync(PID_FILE, process.pid.toString());
-        startServerInternal(targetDir);
-    } else {
-        // This is the foreground CLI process
-        console.log(chalk.cyan('Starting LANShare...'));
-        if (fs.existsSync(PID_FILE)) {
-            console.log(chalk.yellow('Server is already running or PID file exists. Stopping it first...'));
-            stopServer();
-        }
-
-        console.log(`Hosting Folder: "${targetDir}"`);
-        
-        // Spawn detached process
-        const serverProcess = spawn('node', [__filename, '--internal-server', '--silent', targetDir], {
-            detached: true,
-            stdio: 'ignore'
-        });
-        serverProcess.unref();
-
-        console.log(chalk.green('LANShare started in background.'));
-        console.log(chalk.gray('Use `lanshare stop` to terminate.'));
-        process.exit();
+} else if (argv['internal-server']) {
+    // This is the actual background process
+    fs.writeFileSync(PID_FILE, process.pid.toString());
+    startServerInternal(argv._[0]); // targetDir is first arg in background mode
+} else if (command === 'start') {
+    if (isAlreadyRunning()) {
+        console.log(chalk.yellow('Server is already running. Stopping it first...'));
+        stopServer();
     }
+
+    const targetDir = argv._[1] ? path.resolve(argv._[1]) : config.rootDir;
+    if (!fs.existsSync(targetDir)) {
+        console.error(chalk.red(`Error: Directory "${targetDir}" does not exist.`));
+        process.exit(1);
+    }
+
+    console.log(chalk.cyan('Starting LANShare...'));
+    const urls = getAccessURLs(config.port);
+    console.log(chalk.green(`\nLocal Access:   ${urls.local}`));
+    console.log(chalk.green(`Network Access: ${urls.network}\n`));
+    console.log(chalk.gray(`Hosting Folder: "${targetDir}"`));
+
+    const serverProcess = spawn('node', [__filename, '--internal-server', '--silent', targetDir], {
+        detached: true,
+        stdio: 'ignore'
+    });
+
+    fs.writeFileSync(PID_FILE, serverProcess.pid.toString());
+    serverProcess.unref();
+
+    console.log(chalk.blue('\nLANShare started in background.'));
+    console.log(chalk.gray('Use `lanshare stop` to terminate.'));
+    process.exit(0);
+
 } else if (command === 'stop') {
     console.log(chalk.cyan('Stopping LANShare...'));
-    if (stopServer()) {
-        console.log(chalk.green('LANShare stopped.'));
-    } else {
-        console.log(chalk.yellow('LANShare was not running.'));
-    }
-} else if (command === 'restart') {
-    console.log(chalk.cyan('Restarting LANShare...'));
-    stopServer();
-    execSync(`node ${__filename} start`, { stdio: 'inherit' });
+    if (stopServer()) console.log(chalk.green('LANShare stopped.'));
+    else console.log(chalk.yellow('LANShare was not running.'));
+
 } else if (command === 'status') {
-    if (fs.existsSync(PID_FILE)) {
+    if (isAlreadyRunning()) {
         const pid = fs.readFileSync(PID_FILE, 'utf8').trim();
         console.log(chalk.green(`LANShare is running (PID: ${pid}).`));
+        const urls = getAccessURLs(config.port);
+        console.log(chalk.cyan(`Local Access:   ${urls.local}`));
+        console.log(chalk.cyan(`Network Access: ${urls.network}`));
+        console.log(chalk.gray(`Configured Root: "${config.rootDir}"`));
     } else {
         console.log(chalk.yellow('LANShare is not running.'));
     }
-} else if (command === 'help') {
+
+} else if (command === 'restart') {
+    console.log(chalk.cyan('Restarting LANShare...'));
+    stopServer();
+    // Use spawn to start it again so it detaches
+    spawn('node', [__filename, 'start'], { stdio: 'inherit', detached: false });
+    process.exit(0);
+
+} else if (command === 'help' || argv.help || argv.h) {
     handleHelp();
-} else if (argv._.length === 0) {
-    console.log(chalk.red('No command provided. Run `lanshare help` for more information.'));
+} else if (!command) {
+    handleHelp();
 } else {
     console.log(chalk.red(`Unknown command: ${command}. Run ` + chalk.bold('lanshare help') + ' for more information.'));
 }
