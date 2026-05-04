@@ -17,10 +17,10 @@ function Add-ContextMenu($keyPath, $name, $command) {
 }
 
 # 1. Folder Right-Click
-Add-ContextMenu "HKEY_CLASSES_ROOT\Directory\shell\LANShare" "Host on LAN with LANShare" "cmd.exe /c lanshare `"%1`""
+Add-ContextMenu "HKEY_CLASSES_ROOT\Directory\shell\LANShare" "Host on LAN with LANShare" "powershell -WindowStyle Hidden -Command `\"Start-Process cmd -ArgumentList '/c lanshare start `\\`\"%1`\\`\"' -Verb RunAs`\""
 
 # 2. Folder Background Right-Click
-Add-ContextMenu "HKEY_CLASSES_ROOT\Directory\Background\shell\LANShare" "Host on LAN with LANShare" "cmd.exe /c lanshare `"%V`""
+Add-ContextMenu "HKEY_CLASSES_ROOT\Directory\Background\shell\LANShare" "Host on LAN with LANShare" "powershell -WindowStyle Hidden -Command `\"Start-Process cmd -ArgumentList '/c lanshare start `\\`\"%V`\\`\"' -Verb RunAs`\""
 
 Write-Host "`n------------------------------------------------" -ForegroundColor Cyan
 Write-Host " LANShare Context Menu Installed!" -ForegroundColor Green

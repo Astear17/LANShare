@@ -5,162 +5,362 @@ const path = require('path');
 const fs = require('fs');
 const ip = require('ip');
 const chalk = require('chalk');
-const { exec } = require('child_process');
+const { exec, execSync, spawn } = require('child_process');
 const mime = require('mime-types');
 const argv = require('minimist')(process.argv.slice(2));
+const readline = require('readline-sync');
+const archiver = require('archiver');
 
-const app = express();
-const DEFAULT_PORT = 3000;
-const PORT = argv.port || argv.p || process.env.PORT || DEFAULT_PORT;
-const ROOT_DIR = process.cwd();
+const CONFIG_FILE = path.join(__dirname, 'config.json');
+const PID_FILE = path.join(__dirname, 'server.pid');
+const RECENT_FILE = path.join(__dirname, 'recent.json');
 
-// Setup storage for uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const relativePath = req.query.path || '';
-        const dest = path.join(ROOT_DIR, relativePath);
-        if (!dest.startsWith(ROOT_DIR)) {
-            return cb(new Error('Invalid path'), null);
-        }
-        cb(null, dest);
-    },
-    filename: (req, file, cb) => {
-        cb(null, file.originalname);
-    }
-});
+// Load or initialize config
+let config = {
+    rootDir: process.cwd(),
+    port: 3000
+};
+if (fs.existsSync(CONFIG_FILE)) {
+    config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+}
 
-const upload = multer({ storage });
-
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Helper to check if path is safe
-const isSafePath = (unsafePath) => {
-    const absolutePath = path.resolve(ROOT_DIR, unsafePath);
-    return absolutePath.startsWith(ROOT_DIR);
+const saveConfig = () => {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 };
 
-// API: List files
-app.get('/api/files', (req, res) => {
-    const relativePath = req.query.path || '';
-    const absolutePath = path.join(ROOT_DIR, relativePath);
-
-    if (!isSafePath(relativePath)) {
-        return res.status(403).json({ error: 'Access denied' });
+const getRecent = () => {
+    if (fs.existsSync(RECENT_FILE)) {
+        return JSON.parse(fs.readFileSync(RECENT_FILE, 'utf8'));
     }
+    return [];
+};
 
+const addRecent = (filePath) => {
+    let recent = getRecent();
+    recent = [filePath, ...recent.filter(p => p !== filePath)].slice(0, 20);
+    fs.writeFileSync(RECENT_FILE, JSON.stringify(recent, null, 2));
+};
+
+const isAdmin = () => {
     try {
-        const items = fs.readdirSync(absolutePath).map(name => {
-            const itemPath = path.join(absolutePath, name);
-            const stats = fs.statSync(itemPath);
-            return {
-                name,
-                isDir: stats.isDirectory(),
-                size: stats.size,
-                mtime: stats.mtime,
-                type: mime.lookup(name) || 'application/octet-stream'
-            };
-        });
-        res.json({
-            path: relativePath,
-            items: items.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name))
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+        execSync('net session', { stdio: 'ignore' });
+        return true;
+    } catch (e) {
+        return false;
     }
-});
+};
 
-// API: Download file
-app.get('/api/download', (req, res) => {
-    const filePath = req.query.path;
-    if (!filePath || !isSafePath(filePath)) {
-        return res.status(403).json({ error: 'Access denied' });
-    }
+const elevate = () => {
+    const args = process.argv.slice(1).join(' ');
+    const command = `powershell Start-Process node -ArgumentList '${args}' -Verb RunAs`;
+    execSync(command);
+    process.exit();
+};
 
-    const absolutePath = path.join(ROOT_DIR, filePath);
-    if (fs.existsSync(absolutePath) && !fs.statSync(absolutePath).isDirectory()) {
-        res.download(absolutePath);
-    } else {
-        res.status(404).json({ error: 'File not found' });
-    }
-});
-
-// API: Upload files
-app.post('/api/upload', upload.array('files'), (req, res) => {
-    res.json({ message: 'Files uploaded successfully' });
-});
-
-// API: Rename/Move
-app.post('/api/rename', (req, res) => {
-    const { oldPath, newPath } = req.body;
-    if (!isSafePath(oldPath) || !isSafePath(newPath)) {
-        return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const oldAbs = path.join(ROOT_DIR, oldPath);
-    const newAbs = path.join(ROOT_DIR, newPath);
-
-    try {
-        fs.renameSync(oldAbs, newAbs);
-        res.json({ message: 'Renamed successfully' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// API: Delete
-app.delete('/api/delete', (req, res) => {
-    const { path: itemPath } = req.body;
-    if (!isSafePath(itemPath)) {
-        return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const absolutePath = path.join(ROOT_DIR, itemPath);
-
-    try {
-        if (fs.statSync(absolutePath).isDirectory()) {
-            fs.rmSync(absolutePath, { recursive: true, force: true });
-        } else {
-            fs.unlinkSync(absolutePath);
+const stopServer = () => {
+    if (fs.existsSync(PID_FILE)) {
+        const pid = fs.readFileSync(PID_FILE, 'utf8').trim();
+        try {
+            // On Windows, taskkill /f /t /pid is very effective
+            execSync(`taskkill /pid ${pid} /f /t`, { stdio: 'ignore' });
+        } catch (e) {
+            // Process already dead
         }
-        res.json({ message: 'Deleted successfully' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+        if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
+        return true;
     }
-});
+    return false;
+};
 
-// API: Create Folder
-app.post('/api/mkdir', (req, res) => {
-    const { path: dirPath } = req.body;
-    if (!isSafePath(dirPath)) {
-        return res.status(403).json({ error: 'Access denied' });
+// --- Subcommand Handlers ---
+
+const handleHelp = () => {
+    console.log(chalk.bold('\nLANShare CLI Help\n'));
+    console.log(`${chalk.cyan('lanshare --setup')}       : Initial setup (Admin required)`);
+    console.log(`${chalk.cyan('lanshare start [path]')} : Start the server (defaults to config root or current dir)`);
+    console.log(`${chalk.cyan('lanshare stop')}          : Stop the running server`);
+    console.log(`${chalk.cyan('lanshare restart')}       : Restart the server`);
+    console.log(`${chalk.cyan('lanshare status')}        : Check if server is running`);
+    console.log(`${chalk.cyan('lanshare --port <num>')}  : Set default port`);
+    console.log(`${chalk.cyan('lanshare help')}          : Show this help menu\n`);
+};
+
+const handleSetup = () => {
+    if (!isAdmin()) {
+        console.log(chalk.yellow('Admin privileges required. Elevating...'));
+        elevate();
+        return;
     }
 
-    const absolutePath = path.join(ROOT_DIR, dirPath);
-    try {
-        if (!fs.existsSync(absolutePath)) {
-            fs.mkdirSync(absolutePath, { recursive: true });
-            res.json({ message: 'Folder created' });
-        } else {
-            res.status(400).json({ error: 'Folder already exists' });
-        }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    const localIp = ip.address();
+    let newPath = readline.question('Type in here the root directory path you want to share: ');
+    // Strip quotes
+    newPath = newPath.replace(/^["'](.+(?=["']$))["']$/, '$1').trim();
     
-    if (PORT !== DEFAULT_PORT && !process.env.PORT) {
-        console.log(chalk.yellow(`Default port switched to ${PORT}. You can access via IP:${PORT}`));
+    if (newPath && fs.existsSync(newPath) && fs.statSync(newPath).isDirectory()) {
+        config.rootDir = path.resolve(newPath);
+        saveConfig();
+        console.log(chalk.green(`Root directory now set as "${config.rootDir}"`));
     } else {
+        console.log(chalk.red('Invalid directory path.'));
+    }
+};
+
+const handlePort = (port) => {
+    config.port = parseInt(port);
+    saveConfig();
+    console.log(chalk.yellow(`Default port switched to ${config.port}. Restart by running ${chalk.bold('lanshare restart')} to apply changes`));
+};
+
+const startServerInternal = (customPath) => {
+    const app = express();
+    const ROOT_DIR = customPath || config.rootDir;
+    const PORT = config.port;
+
+    // Setup storage for uploads
+    const storage = multer.diskStorage({
+        destination: (req, file, cb) => {
+            const relativePath = req.query.path || '';
+            const dest = path.join(ROOT_DIR, relativePath);
+            if (!dest.startsWith(ROOT_DIR)) {
+                return cb(new Error('Invalid path'), null);
+            }
+            cb(null, dest);
+        },
+        filename: (req, file, cb) => {
+            cb(null, file.originalname);
+        }
+    });
+
+    const upload = multer({ storage });
+    app.use(express.json());
+    app.use(express.static(path.join(__dirname, 'public')));
+
+    const isSafePath = (unsafePath) => {
+        const absolutePath = path.resolve(ROOT_DIR, unsafePath);
+        return absolutePath.startsWith(ROOT_DIR);
+    };
+
+    app.get('/api/files', (req, res) => {
+        const relativePath = req.query.path || '';
+        const absolutePath = path.join(ROOT_DIR, relativePath);
+        if (!isSafePath(relativePath)) return res.status(403).json({ error: 'Access denied' });
+        try {
+            const items = fs.readdirSync(absolutePath).map(name => {
+                const itemPath = path.join(absolutePath, name);
+                const stats = fs.statSync(itemPath);
+                return {
+                    name, isDir: stats.isDirectory(), size: stats.size, mtime: stats.mtime,
+                    type: mime.lookup(name) || 'application/octet-stream'
+                };
+            });
+            res.json({ path: relativePath, items: items.sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name)) });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    app.get('/api/recent', (req, res) => {
+        const recentPaths = getRecent();
+        const items = recentPaths.map(p => {
+            const absolutePath = path.join(ROOT_DIR, p);
+            if (fs.existsSync(absolutePath)) {
+                const stats = fs.statSync(absolutePath);
+                return {
+                    name: path.basename(p),
+                    path: p,
+                    isDir: stats.isDirectory(),
+                    size: stats.size,
+                    mtime: stats.mtime,
+                    type: mime.lookup(p) || 'application/octet-stream'
+                };
+            }
+            return null;
+        }).filter(Boolean);
+        res.json(items);
+    });
+
+    app.get('/api/config', (req, res) => {
+        res.json({ rootDir: ROOT_DIR, port: PORT });
+    });
+
+    app.post('/api/config', (req, res) => {
+        const { rootDir, port } = req.body;
+        if (rootDir) config.rootDir = rootDir;
+        if (port) config.port = port;
+        saveConfig();
+        res.json({ message: 'Config updated' });
+    });
+
+    app.get('/api/download', (req, res) => {
+        const filePath = req.query.path;
+        if (!filePath || !isSafePath(filePath)) return res.status(403).json({ error: 'Access denied' });
+        const absolutePath = path.join(ROOT_DIR, filePath);
+        if (fs.existsSync(absolutePath) && !fs.statSync(absolutePath).isDirectory()) {
+            addRecent(filePath);
+            res.download(absolutePath);
+        }
+        else res.status(404).json({ error: 'File not found' });
+    });
+
+    app.post('/api/upload', upload.array('files'), (req, res) => {
+        req.files.forEach(f => {
+            const rel = req.query.path ? path.join(req.query.path, f.originalname) : f.originalname;
+            addRecent(rel);
+        });
+        res.json({ message: 'Files uploaded successfully' });
+    });
+
+    app.post('/api/rename', (req, res) => {
+        const { oldPath, newPath } = req.body;
+        if (!isSafePath(oldPath) || !isSafePath(newPath)) return res.status(403).json({ error: 'Access denied' });
+        try { fs.renameSync(path.join(ROOT_DIR, oldPath), path.join(ROOT_DIR, newPath)); res.json({ message: 'Renamed successfully' }); }
+        catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    app.delete('/api/delete', (req, res) => {
+        const { path: itemPath } = req.body;
+        if (!isSafePath(itemPath)) return res.status(403).json({ error: 'Access denied' });
+        const absolutePath = path.join(ROOT_DIR, itemPath);
+        try {
+            if (fs.statSync(absolutePath).isDirectory()) fs.rmSync(absolutePath, { recursive: true, force: true });
+            else fs.unlinkSync(absolutePath);
+            res.json({ message: 'Deleted successfully' });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    app.post('/api/mkdir', (req, res) => {
+        const { path: dirPath } = req.body;
+        if (!isSafePath(dirPath)) return res.status(403).json({ error: 'Access denied' });
+        try {
+            const absolutePath = path.join(ROOT_DIR, dirPath);
+            if (!fs.existsSync(absolutePath)) { fs.mkdirSync(absolutePath, { recursive: true }); res.json({ message: 'Folder created' }); }
+            else res.status(400).json({ error: 'Folder already exists' });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    app.post('/api/newfile', (req, res) => {
+        const { path: filePath } = req.body;
+        if (!isSafePath(filePath)) return res.status(403).json({ error: 'Access denied' });
+        try {
+            const absolutePath = path.join(ROOT_DIR, filePath);
+            if (!fs.existsSync(absolutePath)) { 
+                fs.writeFileSync(absolutePath, ''); 
+                addRecent(filePath);
+                res.json({ message: 'File created' }); 
+            }
+            else res.status(400).json({ error: 'File already exists' });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+    });
+
+    app.post('/api/zip', (req, res) => {
+        const { paths } = req.body;
+        if (!paths || !Array.isArray(paths)) return res.status(400).json({ error: 'Invalid paths' });
+
+        const zipName = `LANShare_${new Date().getTime()}.zip`;
+        res.attachment(zipName);
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.pipe(res);
+
+        paths.forEach(p => {
+            if (!isSafePath(p)) return;
+            const absolutePath = path.join(ROOT_DIR, p);
+            if (!fs.existsSync(absolutePath)) return;
+            
+            const stats = fs.statSync(absolutePath);
+            if (stats.isDirectory()) {
+                archive.directory(absolutePath, path.basename(p));
+            } else {
+                archive.file(absolutePath, { name: path.basename(p) });
+            }
+        });
+
+        archive.finalize();
+    });
+
+    app.get('/api/preview', (req, res) => {
+        const filePath = req.query.path;
+        if (!filePath || !isSafePath(filePath)) return res.status(403).json({ error: 'Access denied' });
+        const absolutePath = path.join(ROOT_DIR, filePath);
+        if (fs.existsSync(absolutePath) && !fs.statSync(absolutePath).isDirectory()) {
+            res.sendFile(absolutePath);
+        } else {
+            res.status(404).send('Not found');
+        }
+    });
+
+    app.listen(PORT, '0.0.0.0', () => {
+        const localIp = ip.address();
         console.log(chalk.cyan('Please wait...'));
-        console.log(chalk.bold.green(`Deployed successfully. You can access your localhost via ${localIp}:${PORT}`));
-    }
+        console.log(chalk.bold.green(`Deployed successfully. You can access your localhost via http://${localIp}:${PORT}`));
+        console.log(`\nHosting Folder: "${ROOT_DIR}"`);
+        console.log(chalk.gray('Press Ctrl+C to stop the server (if in foreground)...'));
+        
+        // Only open browser if not in "silent" background mode
+        if (!process.argv.includes('--silent')) {
+            exec(`start http://localhost:${PORT}`);
+        }
+    });
+};
 
-    console.log(chalk.gray(`\nHosting Folder: ${ROOT_DIR}`));
-    
-    // Auto-open browser on host machine
-    exec(`start http://localhost:${PORT}`);
-});
+// --- Main Execution Logic ---
+
+const command = argv._[0];
+
+if (argv.setup) {
+    handleSetup();
+} else if (argv.port || argv.p) {
+    handlePort(argv.port || argv.p);
+} else if (command === 'start' || argv['internal-server']) {
+    const isInternal = argv['internal-server'];
+    const targetDir = argv._[1] ? path.resolve(argv._[1]) : (config.rootDir || process.cwd());
+
+    if (isInternal) {
+        // This is the background process
+        fs.writeFileSync(PID_FILE, process.pid.toString());
+        startServerInternal(targetDir);
+    } else {
+        // This is the foreground CLI process
+        console.log(chalk.cyan('Starting LANShare...'));
+        if (fs.existsSync(PID_FILE)) {
+            console.log(chalk.yellow('Server is already running or PID file exists. Stopping it first...'));
+            stopServer();
+        }
+
+        console.log(`Hosting Folder: "${targetDir}"`);
+        
+        // Spawn detached process
+        const serverProcess = spawn('node', [__filename, '--internal-server', '--silent', targetDir], {
+            detached: true,
+            stdio: 'ignore'
+        });
+        serverProcess.unref();
+
+        console.log(chalk.green('LANShare started in background.'));
+        console.log(chalk.gray('Use `lanshare stop` to terminate.'));
+        process.exit();
+    }
+} else if (command === 'stop') {
+    console.log(chalk.cyan('Stopping LANShare...'));
+    if (stopServer()) {
+        console.log(chalk.green('LANShare stopped.'));
+    } else {
+        console.log(chalk.yellow('LANShare was not running.'));
+    }
+} else if (command === 'restart') {
+    console.log(chalk.cyan('Restarting LANShare...'));
+    stopServer();
+    execSync(`node ${__filename} start`, { stdio: 'inherit' });
+} else if (command === 'status') {
+    if (fs.existsSync(PID_FILE)) {
+        const pid = fs.readFileSync(PID_FILE, 'utf8').trim();
+        console.log(chalk.green(`LANShare is running (PID: ${pid}).`));
+    } else {
+        console.log(chalk.yellow('LANShare is not running.'));
+    }
+} else if (command === 'help') {
+    handleHelp();
+} else if (argv._.length === 0) {
+    console.log(chalk.red('No command provided. Run `lanshare help` for more information.'));
+} else {
+    console.log(chalk.red(`Unknown command: ${command}. Run ` + chalk.bold('lanshare help') + ' for more information.'));
+}
+
