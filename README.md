@@ -16,8 +16,21 @@ LANShare is a high-performance local network file management utility designed fo
     - **Recent Activity**: Track recently accessed or uploaded files across the system.
 - **Secure by Design**: Implements path-validation checks to prevent unauthorized directory traversal.
 
+---
+### Quick Install
+```bash
+npm install
+npm link
+git clone https://github.com/Astear17/LANShare.git
+cd LANShare
+lanshare --setup
+```
+   Enter root directory path you want then
+```bash
+lanshare start
+```
+---
 ## Installation
-
 Ensure you have [Node.js](https://nodejs.org/) installed on your system.
 
 1. Clone the repository or download the source code.
